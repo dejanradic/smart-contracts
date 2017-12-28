@@ -114,7 +114,6 @@ test.before(async () => {
   const r = `0x${sig.substr(0, 64)}`;
   const s = `0x${sig.substr(64, 64)}`;
   const v = parseFloat(sig.substr(128, 2)) + 27;
-  console.log(      [addresses.SimpleAdapter, addresses.SimpleAdapter])
   await version.instance.setupFund.postTransaction(
     { from: manager, gas: config.gas, gasPrice: config.gasPrice },
     [
