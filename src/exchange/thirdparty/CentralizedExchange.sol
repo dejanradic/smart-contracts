@@ -26,12 +26,13 @@ contract CentralizedExchange is Owned {
 
   // EXTERNAL : SETTLEMENT
 
-  /// @notice Makes an order, transfers sellQuantity of sellAsset to the owner
+  /// @notice Deposit assets on centralized exchange
+  /// @dev Makes an order, transfers sellQuantity of sellAsset to the owner
   /// @param sellAsset Asset (as registered in Asset registrar) to be sold
   /// @param buyAsset Asset (as registered in Asset registrar) to be bought
   /// @param sellQuantity Quantity of sellAsset to be sold
   /// @param buyQuantity Quantity of buyAsset expected to be settled / returned
-  function makeOrder(address sellAsset, address buyAsset, uint sellQuantity, uint buyQuantity)
+  function deposit(address sellAsset, address buyAsset, uint sellQuantity, uint buyQuantity)
       returns (uint orderId)
   {
       require(Asset(sellAsset).transferFrom(msg.sender, owner, sellQuantity));
@@ -48,7 +49,7 @@ contract CentralizedExchange is Owned {
   }
 
   /// @notice Settles an order by transfering buyAsset to the order creator
-  /// @dev settleQuantity should be greater than or equal to the buyQuantity
+  /// @dev Takes an order, settleQuantity should be greater than or equal to the buyQuantity
   /// @param orderId Active order id
   /// @param settleQuantity Quantity of buyAsset to be settled / returned
   function settleOrder(uint orderId, uint settleQuantity) returns (bool success) {
@@ -60,9 +61,10 @@ contract CentralizedExchange is Owned {
       success = true;
   }
 
-  /// @notice Cancels an order by returning the sellQuantity to the order creator
+  /// @notice Withdraw assets from centralized exchange;
+  /// @dev Cancels an order by returning the sellQuantity to the order creator
   /// @param orderId Active order id
-  function cancelOrder(uint orderId) returns (bool success) {
+  function withdraw(uint orderId) returns (bool success) {
       OrderInfo order = orders[orderId];
       assert(Asset(order.sellAsset).transferFrom(msg.sender, order.creator, order.sellQuantity));
       order.sellQuantity = 0;

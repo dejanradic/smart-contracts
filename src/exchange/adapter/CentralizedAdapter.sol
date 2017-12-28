@@ -72,7 +72,7 @@ contract CentralizedAdapter is ExchangeInterface {
   )
       external returns (uint id)
   {
-      id = CentralizedExchange(onExchange).makeOrder(
+      id = CentralizedExchange(onExchange).deposit(
           Asset(sellAsset),
           Asset(buyAsset),
           sellQuantity,
@@ -108,7 +108,7 @@ contract CentralizedAdapter is ExchangeInterface {
   )
       external returns (bool success)
   {
-      success = CentralizedExchange(onExchange).cancelOrder(id);
+      success = CentralizedExchange(onExchange).withdraw(id);
       OrderUpdated(id);
   }
 }
