@@ -1,7 +1,7 @@
 pragma solidity ^0.4.19;
 
 import '../ExchangeInterface.sol';
-import '../thirdparty/CentralizedExchangeInterface.sol';
+import '../thirdparty/CentralizedExchange.sol';
 import '../../assets/Asset.sol';
 
 contract CentralizedAdapter is ExchangeInterface {
@@ -14,19 +14,19 @@ contract CentralizedAdapter is ExchangeInterface {
       constant
       returns (uint)
   {
-      return CentralizedExchangeInterface(onExchange).getLastOrderId();
+      return CentralizedExchange(onExchange).getLastOrderId();
   }
   function isActive(address onExchange, uint id)
       constant
       returns (bool)
   {
-      return CentralizedExchangeInterface(onExchange).isActive(id);
+      return CentralizedExchange(onExchange).isActive(id);
   }
   function getOwner(address onExchange, uint id)
       constant
       returns (address)
   {
-      return CentralizedExchangeInterface(onExchange).getOwner(id);
+      return CentralizedExchange(onExchange).getOwner(id);
   }
   function getOrder(address onExchange, uint id)
       constant
@@ -37,7 +37,7 @@ contract CentralizedAdapter is ExchangeInterface {
           sellAsset,
           buyQuantity,
           buyAsset
-      ) = CentralizedExchangeInterface(onExchange).getOrder(id);
+      ) = CentralizedExchange(onExchange).getOrder(id);
       return (
           sellAsset,
           buyAsset,
@@ -49,7 +49,7 @@ contract CentralizedAdapter is ExchangeInterface {
       constant
       returns (uint)
   {
-      var (, , , , , , timestamp) = CentralizedExchangeInterface(onExchange).orders(id);
+      var (, , , , , , timestamp) = CentralizedExchange(onExchange).orders(id);
       return timestamp;
   }
 
@@ -72,7 +72,7 @@ contract CentralizedAdapter is ExchangeInterface {
   )
       external returns (uint id)
   {
-      id = CentralizedExchangeInterface(onExchange).makeOrder(
+      id = CentralizedExchange(onExchange).makeOrder(
           Asset(sellAsset),
           Asset(buyAsset),
           sellQuantity,
@@ -108,7 +108,7 @@ contract CentralizedAdapter is ExchangeInterface {
   )
       external returns (bool success)
   {
-      success = CentralizedExchangeInterface(onExchange).cancelOrder(id);
+      success = CentralizedExchange(onExchange).cancelOrder(id);
       OrderUpdated(id);
   }
 }

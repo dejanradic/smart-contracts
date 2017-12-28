@@ -25,7 +25,6 @@ async function deploy(environment) {
     let mlnToken;
     let eurToken;
     let ethToken;
-    let libObject = {};
     let datafeed;
     let datafeedContract;
     let fund;
@@ -115,11 +114,9 @@ async function deploy(environment) {
       console.log("Deployed governance");
       const governanceContract = await api.newContract(abi, governance);
 
-      // deploy simpleAdapter
-      abi = JSON.parse(
-        fs.readFileSync("out/exchange/adapter/simpleAdapter.abi"),
-      );
-      bytecode = fs.readFileSync("out/exchange/adapter/simpleAdapter.bin");
+      // deploy SimpleAdapter
+      abi = JSON.parse(fs.readFileSync("out/exchange/adapter/SimpleAdapter.abi"));
+      bytecode = fs.readFileSync("out/exchange/adapter/SimpleAdapter.bin");
       opts.data = `0x${bytecode}`;
       simpleAdapter = await api.newContract(abi).deploy(opts, []);
       console.log("Deployed simpleadapter");
@@ -128,7 +125,7 @@ async function deploy(environment) {
       const versionAbi = JSON.parse(
         fs.readFileSync("out/version/Version.abi", "utf8"),
       );
-      let versionBytecode = fs.readFileSync("out/version/Version.bin", "utf8");
+      const versionBytecode = fs.readFileSync("out/version/Version.bin", "utf8");
       fs.writeFileSync("out/version/Version.bin", versionBytecode, "utf8");
       opts.data = `0x${versionBytecode}`;
       opts.gas = 6900000;
@@ -179,7 +176,7 @@ async function deploy(environment) {
         NoCompliance: participation,
         RMMakeOrders: riskMgmt,
         Governance: governance,
-        simpleAdapter,
+        SimpleAdapter: simpleAdapter,
         Version: version,
         Ranking: ranking,
       };
@@ -251,11 +248,9 @@ async function deploy(environment) {
         riskMgmt = await api.newContract(abi).deploy(opts, []);
         console.log(`Deployed riskmgmt at ${riskMgmt}`);
 
-        // deploy simpleAdapter
-        abi = JSON.parse(
-          fs.readFileSync("out/exchange/adapter/simpleAdapter.abi"),
-        );
-        bytecode = fs.readFileSync("out/exchange/adapter/simpleAdapter.bin");
+        // deploy SimpleAdapter
+        abi = JSON.parse(fs.readFileSync("out/exchange/adapter/SimpleAdapter.abi"));
+        bytecode = fs.readFileSync("out/exchange/adapter/SimpleAdapter.bin");
         opts.data = `0x${bytecode}`;
         simpleAdapter = await api.newContract(abi).deploy(opts, []);
         console.log(`Deployed simpleadapter at ${simpleAdapter}`);
@@ -274,23 +269,11 @@ async function deploy(environment) {
         console.log(`Deployed governance at ${governance}`);
         const governanceContract = await api.newContract(abi, governance);
 
-        // link libs to fund (needed to deploy version)
-        abi = JSON.parse(fs.readFileSync("out/Fund.abi"));
-        bytecode = fs.readFileSync("out/Fund.bin", "utf8");
-        libObject = {};
-        libObject[
-          getPlaceholderFromPath("out/exchange/adapter/simpleAdapter")
-        ] = simpleAdapter;
-        bytecode = solc.linkBytecode(bytecode, libObject);
-        opts.data = `0x${bytecode}`;
-        opts.gas = 6700000;
-
         // deploy version (can use identical libs object as above)
         const versionAbi = JSON.parse(
           fs.readFileSync("out/version/Version.abi", "utf8"),
         );
         let versionBytecode = fs.readFileSync("out/version/Version.bin", "utf8");
-        versionBytecode = solc.linkBytecode(versionBytecode, libObject);
         fs.writeFileSync("out/version/Version.bin", versionBytecode, "utf8");
         opts.data = `0x${versionBytecode}`;
         opts.gas = 6700000;
@@ -312,7 +295,7 @@ async function deploy(environment) {
         addressBook[environment] = {
           NoCompliance: participation,
           RMMakeOrders: riskMgmt,
-          simpleAdapter,
+          SimpleAdapter: simpleAdapter,
         };
       }
     } else if (environment === "development") {
@@ -391,11 +374,9 @@ async function deploy(environment) {
       console.log("Deployed governance");
       const governanceContract = await api.newContract(abi, governance);
 
-      // deploy simpleAdapter
-      abi = JSON.parse(
-        fs.readFileSync("out/exchange/adapter/simpleAdapter.abi"),
-      );
-      bytecode = fs.readFileSync("out/exchange/adapter/simpleAdapter.bin");
+      // deploy SimpleAdapter
+      abi = JSON.parse(fs.readFileSync("out/exchange/adapter/SimpleAdapter.abi"));
+      bytecode = fs.readFileSync("out/exchange/adapter/SimpleAdapter.bin");
       opts.data = `0x${bytecode}`;
       simpleAdapter = await api.newContract(abi).deploy(opts, []);
       console.log("Deployed simpleadapter");
@@ -495,7 +476,7 @@ async function deploy(environment) {
         NoCompliance: participation,
         RMMakeOrders: riskMgmt,
         Governance: governance,
-        simpleAdapter,
+        SimpleAdapter: simpleAdapter,
         Version: version,
         MlnToken: mlnToken,
         EurToken: eurToken,

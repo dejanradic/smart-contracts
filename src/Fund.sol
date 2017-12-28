@@ -369,7 +369,8 @@ contract Fund is DSMath, DBC, Owned, Shares, FundInterface {
       require(Asset(sellAsset).approve(module.exchanges[exchangeNumber], sellQuantity)); // Approve exchange to spend assets
 
       // Since there is only one openMakeOrder allowed for each asset, we can assume that openMakeOrderId is set as zero by quantityHeldInCustodyOfExchange() function
-      require(address(module.exchangeAdapters[exchangeNumber]).delegatecall(bytes4(sha3("makeOrder(address,address,address,uint256,uint256)")), module.exchanges[exchangeNumber], sellAsset, buyAsset, sellQuantity, buyQuantity));
+      // Function signature: "64738c23": "makeOrder(address,address,address,uint256,uint256)"
+      require(address(module.exchangeAdapters[exchangeNumber]).delegatecall("64738c23", module.exchanges[exchangeNumber], sellAsset, buyAsset, sellQuantity, buyQuantity));
       exchangeIdsToOpenMakeOrderIds[exchangeNumber][sellAsset] = module.exchangeAdapters[exchangeNumber].getLastOrderId(module.exchanges[exchangeNumber]);
 
       // Success defined as non-zero order id
@@ -438,7 +439,8 @@ contract Fund is DSMath, DBC, Owned, Shares, FundInterface {
         )); // RiskMgmt module: Take order not permitted
 
         // Execute request
-        require(address(module.exchangeAdapters[exchangeNumber]).delegatecall(bytes4(sha3("takeOrder(address,uint256,uint256)")), module.exchanges[exchangeNumber], id, receiveQuantity));
+        // Function signature: "a5bbe7bf": "takeOrder(address,uint256,uint256)"
+        require(address(module.exchangeAdapters[exchangeNumber]).delegatecall("a5bbe7bf", module.exchanges[exchangeNumber], id, receiveQuantity));
 
         // Update ownedAssets array and isInAssetList mapping
         if (!isInAssetList[order.sellAsset]) {
@@ -466,7 +468,8 @@ contract Fund is DSMath, DBC, Owned, Shares, FundInterface {
         Order memory order = orders[id];
 
         // Execute request
-        require(address(module.exchangeAdapters[exchangeNumber]).delegatecall(bytes4(sha3("cancelOrder(address,uint256)")), module.exchanges[exchangeNumber], order.exchangeId));
+        // Function signature: "6a206137": "cancelOrder(address,uint256)"
+        require(address(module.exchangeAdapters[exchangeNumber]).delegatecall("6a206137", module.exchanges[exchangeNumber], order.exchangeId));
 
         order.status = OrderStatus.cancelled;
         OrderUpdated(id);

@@ -70,7 +70,7 @@ test.serial('can set up new fund', async t => {
       addresses.RMMakeOrders,
       addresses.PriceFeed,
       [addresses.SimpleMarket],
-      [addresses.simpleAdapter],
+      [addresses.SimpleAdapter],
       v,
       r,
       s
