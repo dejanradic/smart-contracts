@@ -20,7 +20,7 @@
     "deploy": "babel-node utils/deploy/contracts.js development",
     "deploy:kovan": "babel-node utils/deploy/contracts.js kovan",
     "deploy:live": "babel-node utils/deploy/contracts.js live",
-    "docs:server": "cd scripts/doxity && ./node_modules/.bin/gatsby develop",
+    "docs:server": "doxity develop",
     "docs:build": "doxity build",
     "publish": "find out/**/*.abi -exec mv '{}' '{}'.json ';' && npm publish"
   },
@@ -67,6 +67,7 @@
     "eslint-plugin-import": "^2.8.0",
     "eslint-plugin-jsx-a11y": "^5.1.1",
     "eslint-plugin-react": "^7.4.0",
+    "gatsby": "^1.9.149",
     "prettier-eslint": "^8.2.2",
     "solium": "^1.1.0"
   },

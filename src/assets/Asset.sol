@@ -1,6 +1,6 @@
 pragma solidity ^0.4.19;
 
-import "ds-math/math.sol";
+import "../lib/ds-math/lib/math.sol";
 import "./AssetInterface.sol";
 import "./ERC223ReceivingContract.sol";
 
