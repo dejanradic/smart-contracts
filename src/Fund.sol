@@ -7,6 +7,7 @@ import "./compliance/ComplianceInterface.sol";
 import "./pricefeeds/PriceFeedInterface.sol";
 import "./riskmgmt/RiskMgmtInterface.sol";
 import "./exchange/ExchangeInterface.sol";
+import "./investing/ERC223EscrowInterface.sol";
 import "./FundInterface.sol";
 import "ds-math/math.sol";
 
@@ -41,7 +42,6 @@ contract Fund is DSMath, DBC, Owned, Shares, FundInterface {
         address participant; // Participant in Melon fund requesting subscription or redemption
         RequestStatus status; // Enum: active, cancelled, executed; Status of request
         RequestType requestType; // Enum: subscribe, redeem
-        Asset requestCurrency;
         uint shareQuantity; // Quantity of Melon fund shares
         uint giveQuantity; // Quantity in Melon asset to give to Melon fund to receive shareQuantity
         uint receiveQuantity; // Quantity in Melon asset to receive from Melon fund for given shareQuantity
@@ -73,7 +73,6 @@ contract Fund is DSMath, DBC, Owned, Shares, FundInterface {
     address public VERSION; // Address of Version contract
     address public MELON; // Address of Melon asset contract
     Asset public MELON_ASSET; // Melon as ERC20 contract
-    Asset public NATIVE_ASSET; // Native Asset
     address public REFERENCE_ASSET; // Performance measured against value of this asset
     // Methods fields
     Modules public module; // Struct which holds all the initialised module instances
@@ -104,7 +103,6 @@ contract Fund is DSMath, DBC, Owned, Shares, FundInterface {
     /// @param ofPriceFeed Address of price feed module
     /// @param ofExchanges Addresses of exchange on which this fund can trade
     /// @param ofExchangeAdapters Addresses of exchange adapters
-    /// @return Deployed Fund with manager set as ofManager
     function Fund(
         address ofManager,
         string withName,
@@ -154,6 +152,10 @@ contract Fund is DSMath, DBC, Owned, Shares, FundInterface {
             timestamp: now
         });
     }
+
+    // FALLBACK METHOD
+
+    function () {}
 
     // EXTERNAL METHODS
 
@@ -263,6 +265,7 @@ contract Fund is DSMath, DBC, Owned, Shares, FundInterface {
         // By definition quoteDecimals == fundDecimals
         Request request = requests[id];
 
+        // calculate number of shares for some given asset value
         uint costQuantity = mul(mul(request.shareQuantity, toWholeShareUnit(calcSharePrice())), invertedPrice / 10 ** quoteDecimals);
         if (request.requestCurrency == NATIVE_ASSET) {
             var (isPriceRecent, nativeAssetPrice, nativeAssetDecimal) = module.pricefeed.getPrice(NATIVE_ASSET);
@@ -498,6 +501,9 @@ contract Fund is DSMath, DBC, Owned, Shares, FundInterface {
 
     /// @notice Cancels orders that were not expected to settle immediately, i.e. makeOrders
     /// @dev Reduce exposure with exchange interaction
+    /// @dev Manager can cancel orders at any time
+    /// @dev Anyone can cancel orders when fund shutdown (mitigates effect of absent or malicious manager)
+    /// @param exchangeNumber Active order id of this order array with order owner of this contract on selected Exchange
     /// @param id Active order id of this order array with order owner of this contract on selected Exchange
     function cancelOrder(uint exchangeNumber, uint id)
         external
@@ -515,6 +521,37 @@ contract Fund is DSMath, DBC, Owned, Shares, FundInterface {
 
 
     // PUBLIC METHODS
+
+    // PUBLIC METHODS : ERC223
+
+    /// @notice Subscribes to fund using transfer via ERC223 tokenFallback
+    /// @dev These parameters will be sent by the ERC223 contract itself
+    /// @param _from Address the tokens are being sent from
+    /// @param _value Amount of token sent to this contract
+    /// @param _data Data sent along with the transaction (may be empty)
+    function tokenFallback(address _from, uint _value, bytes _data)
+        pre_cond(module.pricefeed.hasRecentPrice(MELON_ASSET)) // PriceFeed Module: No recent updates for fund asset list
+        pre_cond(module.pricefeed.hasRecentPrices(ownedAssets)) // PriceFeed Module: No recent updates for fund asset list
+        pre_cond(msg.sender == MELON)   // prevent subscriptions using other tokens
+    {
+        // check whether this transfer call is from the escrow contract
+        //  If not, create a request, otherwise execute it
+        // NB: Work in progress
+        // TODO: define ESCROW variable at fund setup (takes another parameter unfortunately)
+        if(_from != ESCROW) {
+            // create request
+        } else {
+            // execute request
+            var (isRecent, invertedPrice, quoteDecimals) = module.pricefeed.getInvertedPrice(MELON);
+            uint newShares = mul(_value, invertedPrice) / 10 ** quoteDecimals; // TODO: correct math here
+            if (!isInAssetList[MELON]) {
+                ownedAssets.push(MELON);
+                isInAssetList[MELON] = true;
+            }
+            address ofInvestor = 0x0; //TODO: implement decoding of address from _data (e.g. https://ethereum.stackexchange.com/q/884/7328)
+            createShares(ofInvestor, newShares);
+        }
+    }
 
     // PUBLIC METHODS : ACCOUNTING
 
@@ -719,6 +756,8 @@ contract Fund is DSMath, DBC, Owned, Shares, FundInterface {
         (, , , , , sharePrice) = performCalculations();
         return sharePrice;
     }
+
+    // PUBLIC VIEW : OTHER
 
     function getModules() view returns (address, address[], address, address) {
         return (
