@@ -26,6 +26,7 @@ let txId;
 let runningGasTotal;
 let SimpleMarket1;
 let SimpleMarket2;
+let MatchingMarket;
 let exchanges;
 let trade1;
 let trade2;
@@ -37,7 +38,7 @@ let deployed;
 // mock data
 const offeredValue = new BigNumber(10 ** 10);
 const wantedShares = new BigNumber(10 ** 10);
-const numberofExchanges = 2;
+const numberofExchanges = 3;    // TODO: replace this with something dynamic
 
 test.before(async () => {
   deployed = await deployEnvironment(environment);
@@ -52,7 +53,11 @@ test.before(async () => {
   SimpleMarket2 = await deployContract("exchange/thirdparty/SimpleMarket",
     {from: manager, gas: config.gas, gasPrice: config.gasPrice} // TODO: remove unnecessary params
   );
-  exchanges = [SimpleMarket1, SimpleMarket2];
+  MatchingMarket = await deployContract("exchange/thirdparty/MatchingMarket",
+    {from: deployer, gas: config.gas, gasPrice: config.gasPrice},
+    [9999999999999] // TODO: remove unnecessary params
+  );
+  exchanges = [SimpleMarket1, SimpleMarket2, MatchingMarket];
   const [r, s, v] = await getSignatureParameters(manager);
   await version.instance.setupFund.postTransaction(
     { from: manager, gas: config.gas, gasPrice: config.gasPrice },
