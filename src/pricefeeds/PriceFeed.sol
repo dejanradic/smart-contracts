@@ -189,6 +189,11 @@ contract PriceFeed is PriceFeedInterface, AssetRegistrar, DSMath {
         // inputPrice quoted in QUOTE_ASSET and multiplied by 10 ** assetDecimal
         var (isInvertedRecent, inputPrice, assetDecimal) = getPrice(ofAsset);
 
+        // Handle devision through zero
+        if (inputPrice == 0) {
+            revert();
+        }
+
         // outputPrice based in QUOTE_ASSET and multiplied by 10 ** quoteDecimal
         uint quoteDecimal = getDecimals(QUOTE_ASSET);
 
