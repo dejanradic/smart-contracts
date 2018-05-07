@@ -1,8 +1,9 @@
 pragma solidity ^0.4.19;
 
 import "./CanonicalRegistrar.sol";
-import "./SimplePriceFeed.sol";
 import "./StakingPriceFeed.sol";
+import "./SimplePriceFeed.sol";
+import "./SimplePriceFeedInterface.sol";
 import "../system/OperatorStaking.sol";
 
 /// @title Price Feed Template
@@ -10,10 +11,23 @@ import "../system/OperatorStaking.sol";
 /// @notice Routes external data to smart contracts
 /// @notice Where external data includes sharePrice of Melon funds
 /// @notice PriceFeed operator could be staked and sharePrice input validated on chain
-contract CanonicalPriceFeed is OperatorStaking, SimplePriceFeed, CanonicalRegistrar {
+contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
 
     // EVENTS
     event SetupPriceFeed(address ofPriceFeed);
+    event PriceUpdated(bytes32 hash);
+
+    // TYPES
+    struct UpdateData {
+        address[] assets;
+        uint[] prices;
+        uint timestamp;
+    }
+
+    struct AssetData {
+        uint price;
+        uint timestamp;
+    }
 
     // FIELDS
     bool public updatesAreAllowed = true;
@@ -23,9 +37,15 @@ contract CanonicalPriceFeed is OperatorStaking, SimplePriceFeed, CanonicalRegist
     uint public INCEPTION;
     uint public PRE_EPOCH_UPDATE_PERIOD;
     uint public MINIMUM_UPDATES_PER_EPOCH;
+    uint public POST_EPOCH_INTERVENTION_DELAY;
     uint public updatesThisEpoch;
     uint public lastUpdateTime;
+    uint public updateId;        // Update counter for this pricefeed; used as a check during investment
+    address public QUOTE_ASSET; // Asset of a portfolio against which all other assets are priced
     address[] public operatorsUpdatingThisEpoch;
+    UpdateData[] public historicalPrices;
+    mapping (address => AssetData) public preDelayPrices; // these prices are valid until end of next intervention delay
+    mapping (address => AssetData) public postDelayPrices; // these prices are valid after intervention delay is over
     mapping (address => bool) public isStakingFeed; // If the Staking Feed has been created through this contract
 
     // METHODS
@@ -57,13 +77,13 @@ contract CanonicalPriceFeed is OperatorStaking, SimplePriceFeed, CanonicalRegist
         address[2] quoteAssetBreakInBreakOut,
         uint[] quoteAssetStandards,
         bytes4[] quoteAssetFunctionSignatures,
-        uint[4] updateInfo, // interval, validity, preEpochUpdatePeriod, minimumUpdatesPerEpoch
+        uint[5] updateInfo, // interval, validity, preEpochUpdatePeriod, minimumUpdatesPerEpoch, interventionDelay
         uint[2] stakingInfo, // minStake, numOperators
         address ofGovernance
     )
         OperatorStaking(AssetInterface(ofStakingAsset), stakingInfo[0], stakingInfo[1])
-        SimplePriceFeed(this, ofQuoteAsset, 0x0)
     {
+        QUOTE_ASSET = ofQuoteAsset;
         registerAsset(
             ofQuoteAsset,
             quoteAssetName,
@@ -80,6 +100,7 @@ contract CanonicalPriceFeed is OperatorStaking, SimplePriceFeed, CanonicalRegist
         INCEPTION = block.timestamp;
         PRE_EPOCH_UPDATE_PERIOD = updateInfo[2];
         MINIMUM_UPDATES_PER_EPOCH = updateInfo[3];
+        POST_EPOCH_INTERVENTION_DELAY = updateInfo[4];
         setOwner(ofGovernance);
     }
 
@@ -97,7 +118,7 @@ contract CanonicalPriceFeed is OperatorStaking, SimplePriceFeed, CanonicalRegist
         emit SetupPriceFeed(ofStakingPriceFeed);
     }
 
-    /// @dev override inherited update function to prevent manual update from authority
+    /// @dev overriden from interface
     function update() external { revert(); }
 
     /// @dev Burn state for a pricefeed operator
@@ -144,10 +165,24 @@ contract CanonicalPriceFeed is OperatorStaking, SimplePriceFeed, CanonicalRegist
         OperatorStaking.stakeFor(user, amount, data);
     }
 
-    // AGGREGATION
+    // UPDATING
+
+    function _updatePrices(address[] ofAssets, uint[] newPrices)
+        internal
+        pre_cond(ofAssets.length == newPrices.length)
+    {
+        updateId++;
+        for (uint i = 0; i < ofAssets.length; ++i) {
+            require(assetIsRegistered(ofAssets[i]));
+            postDelayPrices[ofAssets[i]].timestamp = now;
+            postDelayPrices[ofAssets[i]].price = newPrices[i];
+        }
+        emit PriceUpdated(keccak256(ofAssets, newPrices));
+    }
 
     // TODO: convert requires to pre_cond when number of variables is finalized
     function subFeedPostUpdateHook() public {
+        address[] memory registeredAssets;
         require(isOperator(msg.sender));
         if (INTERVAL == 0) { // special case: update (new epoch) any time (useful for testing)
             delete operatorsUpdatingThisEpoch;
@@ -155,7 +190,11 @@ contract CanonicalPriceFeed is OperatorStaking, SimplePriceFeed, CanonicalRegist
         } else {
             if (lastUpdateTime < getLastEpochTime()) { // new epoch
                 delete operatorsUpdatingThisEpoch;     // clear list
-                updatesThisEpoch = 0;                  // and reset counter
+                updatesThisEpoch = 0;                  // reset counter
+                registeredAssets = getRegisteredAssets();
+                for (uint i = 0; i < registeredAssets.length; i++) { // shift prices to secondary mapping
+                    preDelayPrices[registeredAssets[i]] = postDelayPrices[registeredAssets[i]];
+                }
             }
             uint nextEpoch = getNextEpochTime();
             require(
@@ -168,9 +207,19 @@ contract CanonicalPriceFeed is OperatorStaking, SimplePriceFeed, CanonicalRegist
         operatorsUpdatingThisEpoch.push(msg.sender);
         updatesThisEpoch++; // TODO: can this be replaced by operatorsUpdatingThisEpoch.length?
         if (updatesThisEpoch >= MINIMUM_UPDATES_PER_EPOCH) {
-            collectAndUpdate(getRegisteredAssets());
+            registeredAssets = getRegisteredAssets();
+            uint[] memory newPrices = collectAndUpdate(registeredAssets);
+            historicalPrices.push(
+                UpdateData({
+                    assets: registeredAssets,
+                    prices: newPrices,
+                    timestamp: block.timestamp
+                })
+            );
         }
     }
+
+    // AGGREGATION
 
     /// @dev Only Owner; Same sized input arrays
     /// @dev Updates price of asset relative to QUOTE_ASSET
@@ -181,7 +230,10 @@ contract CanonicalPriceFeed is OperatorStaking, SimplePriceFeed, CanonicalRegist
      *  Input would be: information[EUR-T].price = 8045678 [MLN/ (EUR-T * 10**8)]
      */
     /// @param ofAssets list of asset addresses
-    function collectAndUpdate(address[] ofAssets) internal {
+    function collectAndUpdate(address[] ofAssets)
+        internal
+        returns (uint[])
+    {
         address[] memory operators = operatorsUpdatingThisEpoch;
         uint[] memory newPrices = new uint[](ofAssets.length);
         for (uint i = 0; i < ofAssets.length; i++) {
@@ -197,6 +249,7 @@ contract CanonicalPriceFeed is OperatorStaking, SimplePriceFeed, CanonicalRegist
             newPrices[i] = medianize(assetPrices);
         }
         _updatePrices(ofAssets, newPrices);
+        return newPrices;
     }
 
     /// @dev from MakerDao medianizer contract
@@ -285,6 +338,55 @@ contract CanonicalPriceFeed is OperatorStaking, SimplePriceFeed, CanonicalRegist
             }
         }
         return true;
+    }
+
+    /**
+    @notice Gets price of an asset multiplied by ten to the power of assetDecimals
+    @dev Asset has been registered
+    @param ofAsset Asset for which price should be returned
+    @return {
+      "price": "Price formatting: mul(exchangePrice, 10 ** decimal), to avoid floating numbers",
+      "timestamp": "When the asset's price was updated"
+    }
+    */
+    function getPrice(address ofAsset)
+        view
+        returns (uint price, uint timestamp)
+    {
+        AssetData memory data;
+        if (
+            block.timestamp > add(getLastEpochTime(), POST_EPOCH_INTERVENTION_DELAY) &&
+            block.timestamp < sub(getNextEpochTime(), PRE_EPOCH_UPDATE_PERIOD)       &&
+            lastUpdateTime < getLastEpochTime()     // 1st update for next epoch has not occurred
+        ) {                                         // so secondary mapping not yet updated
+            data = postDelayPrices[ofAsset];
+        } else {
+            data = preDelayPrices[ofAsset];
+        }
+        return (data.price, data.timestamp);
+    }
+
+    /**
+    @notice Price of a registered asset in format (bool areRecent, uint[] prices, uint[] decimals)
+    @dev Convention for price formatting: mul(price, 10 ** decimal), to avoid floating numbers
+    @param ofAssets Assets for which prices should be returned
+    @return {
+        "prices":       "Array of prices",
+        "timestamps":   "Array of timestamps",
+    }
+    */
+    function getPrices(address[] ofAssets)
+        view
+        returns (uint[], uint[])
+    {
+        uint[] memory prices = new uint[](ofAssets.length);
+        uint[] memory timestamps = new uint[](ofAssets.length);
+        for (uint i; i < ofAssets.length; i++) {
+            var (price, timestamp) = getPrice(ofAssets[i]);
+            prices[i] = price;
+            timestamps[i] = timestamp;
+        }
+        return (prices, timestamps);
     }
 
     function getPriceInfo(address ofAsset)
