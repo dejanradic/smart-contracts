@@ -32,6 +32,7 @@ module.exports = {
         interval: 60,
         validity: 60,
         preEpochUpdatePeriod: 30,
+        postEpochInterventionDelay: 10,
         minimumUpdates: 1,
         assetsToRegister: [
           'MLN-T', 'WETH-T', 'MKR-T', 'DAI-T', 'ANT-T', 'ZRX-T', 'BAT-T',
@@ -61,6 +62,7 @@ module.exports = {
         interval: 0,
         validity: 60,
         preEpochUpdatePeriod: 60,
+        postEpochInterventionDelay: 10,
         minimumUpdates: 1
       },
       fund: {
