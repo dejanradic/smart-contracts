@@ -109,11 +109,24 @@ function medianize(pricesArray) {
   return prices[(len - 1) / 2];
 }
 
-// get unix timestamp for a tx
+// get timestamp for a tx in seconds
 async function txidToTimestamp(txid) {
   const receipt = await api.eth.getTransactionReceipt(txid);
   const timestamp = (await api.eth.getBlockByHash(receipt.blockHash)).timestamp;
   return Math.round(new Date(timestamp).getTime()/1000);
+}
+
+// get latest timestamp in seconds
+async function getBlockTimestamp() {
+  const timestamp = (await api.eth.getBlockByNumber('latest')).timestamp;
+  return Math.round(new Date(timestamp).getTime()/1000);
+}
+
+async function mineToTime(timestamp) {
+  while (await getBlockTimestamp() < timestamp) {
+    await sleep (500);
+    await api.eth.sendTransaction();
+  }
 }
 
 async function mineSeconds(seconds) {
@@ -154,7 +167,8 @@ test.beforeEach(async t => {
       [],
       [
         config.protocol.pricefeed.interval, config.protocol.pricefeed.validity,
-        config.protocol.pricefeed.preEpochUpdatePeriod, config.protocol.pricefeed.minimumUpdates
+        config.protocol.pricefeed.preEpochUpdatePeriod, config.protocol.pricefeed.minimumUpdates,
+        config.protocol.pricefeed.postEpochInterventionDelay
       ],
       [config.protocol.staking.minimumAmount, config.protocol.staking.numOperators],
       accounts[0]
@@ -467,9 +481,10 @@ test.only("updates can only occur within last N seconds before a new epoch", asy
   const initialEurPrice = new BigNumber(10 ** 10);
   const modifiedEurPrice1 = new BigNumber(2 * 10 ** 10);
   const modifiedEurPrice2 = new BigNumber(3 * 10 ** 10);
-  const interval = 10; // TODO: rename epochDuration?
-  const validity = 10;
+  const interval = 15;
+  const validity = 15;
   const preEpochUpdatePeriod = 5;
+  const postEpochInterventionDelay = 5;
   const minimumUpdates = 1;
 
   // overwrite the context pricefeed
@@ -486,7 +501,7 @@ test.only("updates can only occur within last N seconds before a new epoch", asy
       [mockBreakIn, mockBreakOut],
       [],
       [],
-      [interval, validity, preEpochUpdatePeriod, minimumUpdates],
+      [interval, validity, preEpochUpdatePeriod, minimumUpdates, postEpochInterventionDelay],
       [config.protocol.staking.minimumAmount, config.protocol.staking.numOperators],
       accounts[0]
     ], () => {}, true
@@ -495,11 +510,29 @@ test.only("updates can only occur within last N seconds before a new epoch", asy
   await createPriceFeedAndStake(t.context);
   await registerEur(t.context.canonicalPriceFeed);
 
+  const nextEpochTime0 = await t.context.canonicalPriceFeed.instance.getNextEpochTime.call();
+
+  await mineToTime(Number(nextEpochTime0) - preEpochUpdatePeriod + 1); // to update interval
+
   let txid = await t.context.pricefeeds[0].instance.update.postTransaction(
     { from: accounts[0], gas: inputGas},
     [[mlnToken.address, eurToken.address], [defaultMlnPrice, initialEurPrice]]
   );    // set first epoch time
+
   const update1Time = await txidToTimestamp(txid)
+  const nextEpochTime1 = await t.context.canonicalPriceFeed.instance.getNextEpochTime.call();
+
+  await mineToTime(Number(nextEpochTime1) + postEpochInterventionDelay + 1); // mine past delay
+
+  const [eurPriceUpdate1, ] = await t.context.canonicalPriceFeed.instance.getPrice.call(
+    {}, [eurToken.address]
+  );
+  const timeAtPriceFetch1 = await getBlockTimestamp();
+
+  t.true(update1Time < nextEpochTime1); // update1 before next epoch
+  t.true(update1Time >= nextEpochTime1 - preEpochUpdatePeriod); // within preEpoch period
+  t.true(timeAtPriceFetch1 > Number(nextEpochTime1) + postEpochInterventionDelay);
+  t.is(Number(eurPriceUpdate1), Number(initialEurPrice));
 
   txid = await t.context.pricefeeds[0].instance.update.postTransaction(
     { from: accounts[0], gas: inputGas},
@@ -510,20 +543,22 @@ test.only("updates can only occur within last N seconds before a new epoch", asy
   const [eurPricePrematureUpdate, ] = await t.context.canonicalPriceFeed.instance.getPrice.call(
     {}, [eurToken.address]
   );
+  const lastEpochTime2 = await t.context.canonicalPriceFeed.instance.getLastEpochTime.call();
+  const nextEpochTime2 = await t.context.canonicalPriceFeed.instance.getNextEpochTime.call();
 
-  t.true((update2Time - update1Time) < preEpochUpdatePeriod); // 2nd update was premature
+  t.true(update2Time > Number(lastEpochTime2));
+  t.true(update2Time < Number(nextEpochTime2) - preEpochUpdatePeriod); // 2nd update premature
   t.is(Number(gasUsedPrematureUpdate), inputGas);   // expect a thrown tx (all gas consumed)
   t.is(Number(eurPricePrematureUpdate), Number(initialEurPrice)); // price did not update
 
-  await mineSeconds(7);
+  const nextEpochTime3 = await t.context.canonicalPriceFeed.instance.getNextEpochTime.call();
+  await mineToTime(Number(nextEpochTime3) - preEpochUpdatePeriod + 1); // mine to update period
 
-  const nextEpochTime = await t.context.canonicalPriceFeed.instance.getNextEpochTime.call();
   txid = await t.context.pricefeeds[0].instance.update.postTransaction(
     { from: accounts[0], gas: inputGas},
     [[mlnToken.address, eurToken.address], [defaultMlnPrice, modifiedEurPrice1]]
   );
   const update3Time = await txidToTimestamp(txid)
-  console.log(`UPDATE 3 GAS: ${(await api.eth.getTransactionReceipt(txid)).gasUsed}`)
   const [eurPriceAfterUpdate3, ] = await t.context.canonicalPriceFeed.instance.getPrice.call(
     {}, [eurToken.address]
   );
@@ -532,7 +567,15 @@ test.only("updates can only occur within last N seconds before a new epoch", asy
     [[mlnToken.address, eurToken.address], [defaultMlnPrice, modifiedEurPrice2]]
   );
   const update4Time = await txidToTimestamp(txid)
+  const update4Gas = (await api.eth.getTransactionReceipt(txid)).gasUsed;
+  console.log(`Update 4 gas: ${update4Gas}`);
   const [eurPriceAfterUpdate4, ] = await t.context.canonicalPriceFeed.instance.getPrice.call(
+    {}, [eurToken.address]
+  );
+
+  await mineToTime(Number(nextEpochTime3) + postEpochInterventionDelay + 1); // mine past delay
+
+  const [eurPriceAfterEpoch3Delay, ] = await t.context.canonicalPriceFeed.instance.getPrice.call(
     {}, [eurToken.address]
   );
 
@@ -542,16 +585,43 @@ test.only("updates can only occur within last N seconds before a new epoch", asy
   // console.log(`LAST EPOCH TIME: ${await t.context.canonicalPriceFeed.instance.getLastEpochTime.call()}`)
   // console.log(`NEXT EPOCH TIME: ${await t.context.canonicalPriceFeed.instance.getNextEpochTime.call()}`)
 
-  t.true((nextEpochTime - update3Time) <= preEpochUpdatePeriod);
-  t.true((nextEpochTime - update4Time) <= preEpochUpdatePeriod);
-  t.is(Number(eurPriceAfterUpdate3), Number(modifiedEurPrice1)); // canonical price at 1st update
-  t.is(
-    Number(eurPriceAfterUpdate4),
-    Number(medianize([modifiedEurPrice1, modifiedEurPrice2]))
-  ); // canonical price is median of prices after two updates
-});
+  // updates occurred in designated update interval
+  t.true(update3Time < Number(nextEpochTime3));
+  t.true(update3Time > Number(nextEpochTime3) - preEpochUpdatePeriod);
+  t.true(update4Time < Number(nextEpochTime3));
+  t.true(update4Time > Number(nextEpochTime3) - preEpochUpdatePeriod);
+  // price did not updated before delay
+  t.is(Number(eurPriceAfterUpdate3), Number(eurPriceUpdate1));
+  t.is(Number(eurPriceAfterUpdate4), Number(eurPriceUpdate1));
+  // price updated after delay
+  t.is(Number(eurPriceAfterEpoch3Delay), Number(medianize([modifiedEurPrice1, modifiedEurPrice2])));
 
-test.todo("authority can toggle updating, and turning off before delay ends prevents update");
+  const nextEpochTime4 = await t.context.canonicalPriceFeed.instance.getNextEpochTime.call();
+  await mineToTime(Number(nextEpochTime4) - preEpochUpdatePeriod + 1); // mine to update period
+
+  const [eurPriceBeforeIntervention, ] = await t.context.canonicalPriceFeed.instance.getPrice.call(
+    {}, [eurToken.address]
+  );
+
+  txid = await t.context.pricefeeds[0].instance.update.postTransaction(
+    { from: accounts[0], gas: inputGas},
+    [[mlnToken.address, eurToken.address], [defaultMlnPrice, modifiedEurPrice2]]
+  );
+  console.log(`GAS USED:  ${(await api.eth.getTransactionReceipt(txid)).gasUsed}`)
+  const update5Time = await txidToTimestamp(txid)
+
+  await mineToTime(Number(nextEpochTime4)); // mine to delay
+
+  await t.context.canonicalPriceFeed.instance.interruptUpdating.postTransaction({from: accounts[0]});
+
+  await mineToTime(Number(nextEpochTime4) + postEpochInterventionDelay + 1); // mine past delay
+
+  const [eurPriceAfterIntervention, ] = await t.context.canonicalPriceFeed.instance.getPrice.call(
+    {}, [eurToken.address]
+  );
+
+  t.is(Number(eurPriceAfterIntervention), Number(eurPriceBeforeIntervention));
+});
 
 test("governance can burn stake of an operator", async t => {
   await createPriceFeedAndStake(t.context);

@@ -299,8 +299,8 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
     }
 
     function setMinimumPriceCount(uint newCount) auth { minimumPriceCount = newCount; }
-    function enableUpdates() auth { updatesAreAllowed = true; }
-    function disableUpdates() auth { updatesAreAllowed = false; }
+    function interruptUpdating() auth { updatesAreAllowed = false; }
+    function resumeUpdating() auth { updatesAreAllowed = true; }
 
     // PUBLIC VIEW METHODS
 
@@ -354,7 +354,9 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
         returns (uint price, uint timestamp)
     {
         AssetData memory data;
+        // TODO: add special case for INTERVAL 0
         if (
+            updatesAreAllowed &&    // intervention is not occurring
             block.timestamp > add(getLastEpochTime(), POST_EPOCH_INTERVENTION_DELAY) &&
             block.timestamp < sub(getNextEpochTime(), PRE_EPOCH_UPDATE_PERIOD)       &&
             lastUpdateTime < getLastEpochTime()     // 1st update for next epoch has not occurred
