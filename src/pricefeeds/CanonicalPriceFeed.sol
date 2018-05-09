@@ -194,6 +194,7 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
                 registeredAssets = getRegisteredAssets();
                 for (uint i = 0; i < registeredAssets.length; i++) { // shift prices to secondary mapping
                     preDelayPrices[registeredAssets[i]] = postDelayPrices[registeredAssets[i]];
+                    delete postDelayPrices[registeredAssets[i]];
                 }
             }
             uint nextEpoch = getNextEpochTime();
@@ -355,15 +356,26 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
     {
         AssetData memory data;
         // TODO: add special case for INTERVAL 0
-        if (
-            updatesAreAllowed &&    // intervention is not occurring
-            block.timestamp > add(getLastEpochTime(), POST_EPOCH_INTERVENTION_DELAY) &&
-            block.timestamp < sub(getNextEpochTime(), PRE_EPOCH_UPDATE_PERIOD)       &&
-            lastUpdateTime < getLastEpochTime()     // 1st update for next epoch has not occurred
-        ) {                                         // so secondary mapping not yet updated
-            data = postDelayPrices[ofAsset];
-        } else {
+
+        if (isNowUpdatePeriod()) {
+            if(lastUpdateTime < getLastEpochTime()) {
+                // 1st update for next epoch has not occurred, so secondary mapping not yet updated
+                data = postDelayPrices[ofAsset];
+            } else {
+                // secondary mapping was updated, so can use it
+                data = preDelayPrices[ofAsset];
+            }
+        } else if (isNowInterventionDelay()) {
             data = preDelayPrices[ofAsset];
+        } else if (
+            !isNowUpdatePeriod() &&
+            !isNowInterventionDelay()
+        ) {
+            if (updatesAreAllowed) {    // intervention is not occurring
+                data = postDelayPrices[ofAsset];
+            } else { // intervention is occurring
+                data = preDelayPrices[ofAsset];
+            }
         }
         return (data.price, data.timestamp);
     }
@@ -514,6 +526,20 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
     function getNextEpochTime() view returns (uint) { // TODO: special case for zero INVERVAL?
         uint lastEpochTime = getLastEpochTime();
         return add(lastEpochTime, INTERVAL);
+    }
+
+    function isNowInterventionDelay() view returns (bool) {
+        return (
+            block.timestamp > getLastEpochTime() &&
+            block.timestamp < add(getLastEpochTime(), POST_EPOCH_INTERVENTION_DELAY)
+        );
+    }
+
+    function isNowUpdatePeriod() view returns (bool) {
+        return (
+            block.timestamp < getNextEpochTime() &&
+            block.timestamp > sub(getNextEpochTime(), PRE_EPOCH_UPDATE_PERIOD)
+        );
     }
  
     // TODO: may not be necessary in the end. Remove if commented out during cleanup.
