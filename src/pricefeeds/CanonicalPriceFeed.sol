@@ -37,15 +37,14 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
     uint public INCEPTION;
     uint public PRE_EPOCH_UPDATE_PERIOD;
     uint public MINIMUM_UPDATES_PER_EPOCH;
-    uint public POST_EPOCH_INTERVENTION_DELAY;
-    uint public updatesThisEpoch;
+    uint public POST_EPOCH_INTERVENTION_PERIOD;
     uint public lastUpdateTime;
     uint public updateId;        // Update counter for this pricefeed; used as a check during investment
     address public QUOTE_ASSET; // Asset of a portfolio against which all other assets are priced
     address[] public operatorsUpdatingThisEpoch;
     UpdateData[] public historicalPrices;
-    mapping (address => AssetData) public preDelayPrices; // these prices are valid until end of next intervention delay
-    mapping (address => AssetData) public postDelayPrices; // these prices are valid after intervention delay is over
+    mapping (address => AssetData) public backupPrices; // these prices are valid until end of next intervention delay
+    mapping (address => AssetData) public latestPrices; // these prices are valid after intervention delay is over
     mapping (address => bool) public isStakingFeed; // If the Staking Feed has been created through this contract
 
     // METHODS
@@ -77,7 +76,7 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
         address[2] quoteAssetBreakInBreakOut,
         uint[] quoteAssetStandards,
         bytes4[] quoteAssetFunctionSignatures,
-        uint[5] updateInfo, // interval, validity, preEpochUpdatePeriod, minimumUpdatesPerEpoch, interventionDelay
+        uint[5] updateInfo, // interval, validity, preEpochUpdatePeriod, minimumUpdatesPerEpoch, interventionPeriod
         uint[2] stakingInfo, // minStake, numOperators
         address ofGovernance
     )
@@ -100,7 +99,7 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
         INCEPTION = block.timestamp;
         PRE_EPOCH_UPDATE_PERIOD = updateInfo[2];
         MINIMUM_UPDATES_PER_EPOCH = updateInfo[3];
-        POST_EPOCH_INTERVENTION_DELAY = updateInfo[4];
+        POST_EPOCH_INTERVENTION_PERIOD = updateInfo[4];
         setOwner(ofGovernance);
     }
 
@@ -174,8 +173,8 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
         updateId++;
         for (uint i = 0; i < ofAssets.length; ++i) {
             require(assetIsRegistered(ofAssets[i]));
-            postDelayPrices[ofAssets[i]].timestamp = now;
-            postDelayPrices[ofAssets[i]].price = newPrices[i];
+            latestPrices[ofAssets[i]].timestamp = now;
+            latestPrices[ofAssets[i]].price = newPrices[i];
         }
         emit PriceUpdated(keccak256(ofAssets, newPrices));
     }
@@ -184,30 +183,25 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
     function subFeedPostUpdateHook() public {
         address[] memory registeredAssets;
         require(isOperator(msg.sender));
+        require(isNowUpdatePeriod());
         if (INTERVAL == 0) { // special case: update (new epoch) any time (useful for testing)
             delete operatorsUpdatingThisEpoch;
-            updatesThisEpoch = 0;
+            require(operatorsUpdatingThisEpoch.length == 0);
         } else {
             if (lastUpdateTime < getLastEpochTime()) { // new epoch
                 delete operatorsUpdatingThisEpoch;     // clear list
-                updatesThisEpoch = 0;                  // reset counter
+                require(operatorsUpdatingThisEpoch.length == 0);
                 registeredAssets = getRegisteredAssets();
                 for (uint i = 0; i < registeredAssets.length; i++) { // shift prices to secondary mapping
-                    preDelayPrices[registeredAssets[i]] = postDelayPrices[registeredAssets[i]];
-                    delete postDelayPrices[registeredAssets[i]];
+                    backupPrices[registeredAssets[i]] = latestPrices[registeredAssets[i]];
+                    delete latestPrices[registeredAssets[i]];
                 }
             }
-            uint nextEpoch = getNextEpochTime();
-            require(
-                (nextEpoch - PRE_EPOCH_UPDATE_PERIOD) <= block.timestamp &&
-                block.timestamp < nextEpoch
-            );
         }
         require(!hasUpdatedThisEpoch(msg.sender));
         lastUpdateTime = block.timestamp;
         operatorsUpdatingThisEpoch.push(msg.sender);
-        updatesThisEpoch++; // TODO: can this be replaced by operatorsUpdatingThisEpoch.length?
-        if (updatesThisEpoch >= MINIMUM_UPDATES_PER_EPOCH) {
+        if (operatorsUpdatingThisEpoch.length >= MINIMUM_UPDATES_PER_EPOCH) {
             registeredAssets = getRegisteredAssets();
             uint[] memory newPrices = collectAndUpdate(registeredAssets);
             historicalPrices.push(
@@ -360,21 +354,21 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
         if (isNowUpdatePeriod()) {
             if(lastUpdateTime < getLastEpochTime()) {
                 // 1st update for next epoch has not occurred, so secondary mapping not yet updated
-                data = postDelayPrices[ofAsset];
+                data = latestPrices[ofAsset];
             } else {
                 // secondary mapping was updated, so can use it
-                data = preDelayPrices[ofAsset];
+                data = backupPrices[ofAsset];
             }
-        } else if (isNowInterventionDelay()) {
-            data = preDelayPrices[ofAsset];
+        } else if (isNowInterventionPeriod()) {
+            data = backupPrices[ofAsset];
         } else if (
             !isNowUpdatePeriod() &&
-            !isNowInterventionDelay()
+            !isNowInterventionPeriod()
         ) {
             if (updatesAreAllowed) {    // intervention is not occurring
-                data = postDelayPrices[ofAsset];
+                data = latestPrices[ofAsset];
             } else { // intervention is occurring
-                data = preDelayPrices[ofAsset];
+                data = backupPrices[ofAsset];
             }
         }
         return (data.price, data.timestamp);
@@ -528,17 +522,17 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
         return add(lastEpochTime, INTERVAL);
     }
 
-    function isNowInterventionDelay() view returns (bool) {
+    function isNowInterventionPeriod() view returns (bool) {
         return (
-            block.timestamp > getLastEpochTime() &&
-            block.timestamp < add(getLastEpochTime(), POST_EPOCH_INTERVENTION_DELAY)
+            block.timestamp >= getLastEpochTime() &&
+            block.timestamp <= add(getLastEpochTime(), POST_EPOCH_INTERVENTION_PERIOD)
         );
     }
 
     function isNowUpdatePeriod() view returns (bool) {
         return (
             block.timestamp < getNextEpochTime() &&
-            block.timestamp > sub(getNextEpochTime(), PRE_EPOCH_UPDATE_PERIOD)
+            block.timestamp >= sub(getNextEpochTime(), PRE_EPOCH_UPDATE_PERIOD)
         );
     }
  

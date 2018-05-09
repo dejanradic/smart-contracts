@@ -567,8 +567,6 @@ test.only("updates can only occur within last N seconds before a new epoch", asy
     [[mlnToken.address, eurToken.address], [defaultMlnPrice, modifiedEurPrice2]]
   );
   const update4Time = await txidToTimestamp(txid)
-  const update4Gas = (await api.eth.getTransactionReceipt(txid)).gasUsed;
-  console.log(`Update 4 gas: ${update4Gas}`);
   const [eurPriceAfterUpdate4, ] = await t.context.canonicalPriceFeed.instance.getPrice.call(
     {}, [eurToken.address]
   );
@@ -578,12 +576,6 @@ test.only("updates can only occur within last N seconds before a new epoch", asy
   const [eurPriceAfterEpoch3Delay, ] = await t.context.canonicalPriceFeed.instance.getPrice.call(
     {}, [eurToken.address]
   );
-
-  // console.log(`UPDATE 4 GAS: ${(await api.eth.getTransactionReceipt(txid)).gasUsed}`)
-  // console.log(`UPDATE 4 TIME: ${update4Time}`)
-  // console.log(`LAST UPDATE TIME: ${await t.context.canonicalPriceFeed.instance.lastUpdateTime.call()}`)
-  // console.log(`LAST EPOCH TIME: ${await t.context.canonicalPriceFeed.instance.getLastEpochTime.call()}`)
-  // console.log(`NEXT EPOCH TIME: ${await t.context.canonicalPriceFeed.instance.getNextEpochTime.call()}`)
 
   // updates occurred in designated update interval
   t.true(update3Time < Number(nextEpochTime3));
@@ -602,53 +594,13 @@ test.only("updates can only occur within last N seconds before a new epoch", asy
   const [eurPriceBeforeIntervention, ] = await t.context.canonicalPriceFeed.instance.getPrice.call(
     {}, [eurToken.address]
   );
-  const [eurPre] = await t.context.canonicalPriceFeed.instance.preDelayPrices.call({}, [eurToken.address]);
-  const [eurPost] = await t.context.canonicalPriceFeed.instance.postDelayPrices.call({}, [eurToken.address]);
-  const [getPrice, ] = await t.context.canonicalPriceFeed.instance.getPrice.call(
-    {}, [eurToken.address]
-  );
-
-
-  console.log(`PRE PRICE: ${eurPre}`)
-  console.log(`POST PRICE: ${eurPost}`)
-  console.log(`GET PRICE: ${getPrice}`)
-  console.log(`FEED: ${t.context.canonicalPriceFeed.address}`)
-  console.log(`EUR: ${eurToken.address}`)
-
-
   txid = await t.context.pricefeeds[0].instance.update.postTransaction(
     { from: accounts[0], gas: inputGas},
     [[mlnToken.address, eurToken.address], [defaultMlnPrice, modifiedEurPrice2]]
   );
-  console.log(`GAS USED:  ${(await api.eth.getTransactionReceipt(txid)).gasUsed}`)
   const update5Time = await txidToTimestamp(txid)
 
-  const [eurPre2] = await t.context.canonicalPriceFeed.instance.preDelayPrices.call({}, [eurToken.address]);
-  const [eurPost2] = await t.context.canonicalPriceFeed.instance.postDelayPrices.call({}, [eurToken.address]);
-  const [getPrice2, ] = await t.context.canonicalPriceFeed.instance.getPrice.call(
-    {}, [eurToken.address]
-  );
-  console.log(`PRE PRICE: ${eurPre2}`)
-  console.log(`POST PRICE: ${eurPost2}`)
-  console.log(`GET PRICE: ${getPrice2}`)
-  console.log(`FEED: ${t.context.canonicalPriceFeed.address}`)
-  console.log(`EUR: ${eurToken.address}`)
-
-
-
   await mineToTime(Number(nextEpochTime4)); // mine to delay
-
-
-  const [eurPre3] = await t.context.canonicalPriceFeed.instance.preDelayPrices.call({}, [eurToken.address]);
-  const [eurPost3] = await t.context.canonicalPriceFeed.instance.postDelayPrices.call({}, [eurToken.address]);
-  const [getPrice3, ] = await t.context.canonicalPriceFeed.instance.getPrice.call(
-    {}, [eurToken.address]
-  );
-  console.log(`PRE PRICE: ${eurPre3}`)
-  console.log(`POST PRICE: ${eurPost3}`)
-  console.log(`GET PRICE: ${getPrice3}`)
-  console.log(`FEED: ${t.context.canonicalPriceFeed.address}`)
-  console.log(`EUR: ${eurToken.address}`)
 
   txid = await t.context.canonicalPriceFeed.instance.interruptUpdating.postTransaction({from: accounts[0]});
 
