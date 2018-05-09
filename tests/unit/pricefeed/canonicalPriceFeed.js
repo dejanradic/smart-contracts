@@ -476,7 +476,7 @@ test("governance cannot manually force a price update", async t => {
   t.is(preUpdateId, postUpdateId)
 });
 
-test.only("updates can only occur within last N seconds before a new epoch", async t => {
+test.only("automatic updates execute as expected", async t => {
   const inputGas = 6000000;
   const initialEurPrice = new BigNumber(10 ** 10);
   const modifiedEurPrice1 = new BigNumber(2 * 10 ** 10);
@@ -511,8 +511,9 @@ test.only("updates can only occur within last N seconds before a new epoch", asy
   await registerEur(t.context.canonicalPriceFeed);
 
   const nextEpochTime0 = await t.context.canonicalPriceFeed.instance.getNextEpochTime.call();
-
-  await mineToTime(Number(nextEpochTime0) - preEpochUpdatePeriod + 1); // to update interval
+  await mineToTime(Number(nextEpochTime0)); // start a fresh epoch
+  const nextEpochTime1 = await t.context.canonicalPriceFeed.instance.getNextEpochTime.call();
+  await mineToTime(Number(nextEpochTime1) - preEpochUpdatePeriod); // mine past delay
 
   let txid = await t.context.pricefeeds[0].instance.update.postTransaction(
     { from: accounts[0], gas: inputGas},
@@ -520,8 +521,6 @@ test.only("updates can only occur within last N seconds before a new epoch", asy
   );    // set first epoch time
 
   const update1Time = await txidToTimestamp(txid)
-  const nextEpochTime1 = await t.context.canonicalPriceFeed.instance.getNextEpochTime.call();
-
   await mineToTime(Number(nextEpochTime1) + postEpochInterventionDelay + 1); // mine past delay
 
   const [eurPriceUpdate1, ] = await t.context.canonicalPriceFeed.instance.getPrice.call(

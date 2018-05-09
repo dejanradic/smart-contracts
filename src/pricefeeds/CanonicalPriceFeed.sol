@@ -183,25 +183,22 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
     function subFeedPostUpdateHook() public {
         address[] memory registeredAssets;
         require(isOperator(msg.sender));
-        require(isNowUpdatePeriod());
-        if (INTERVAL == 0) { // special case: update (new epoch) any time (useful for testing)
-            delete operatorsUpdatingThisEpoch;
-            require(operatorsUpdatingThisEpoch.length == 0);
-        } else {
+        if (INTERVAL != 0) {
+            require(isNowUpdatePeriod());
             if (lastUpdateTime < getLastEpochTime()) { // new epoch
                 delete operatorsUpdatingThisEpoch;     // clear list
                 require(operatorsUpdatingThisEpoch.length == 0);
                 registeredAssets = getRegisteredAssets();
-                for (uint i = 0; i < registeredAssets.length; i++) { // shift prices to secondary mapping
+                for (uint i = 0; i < registeredAssets.length; i++) { // shift to secondary mapping
                     backupPrices[registeredAssets[i]] = latestPrices[registeredAssets[i]];
                     delete latestPrices[registeredAssets[i]];
                 }
             }
+            require(!hasUpdatedThisEpoch(msg.sender));
         }
-        require(!hasUpdatedThisEpoch(msg.sender));
         lastUpdateTime = block.timestamp;
         operatorsUpdatingThisEpoch.push(msg.sender);
-        if (operatorsUpdatingThisEpoch.length >= MINIMUM_UPDATES_PER_EPOCH) {
+        if (INTERVAL == 0 || operatorsUpdatingThisEpoch.length >= MINIMUM_UPDATES_PER_EPOCH) {
             registeredAssets = getRegisteredAssets();
             uint[] memory newPrices = collectAndUpdate(registeredAssets);
             historicalPrices.push(
@@ -294,8 +291,13 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
     }
 
     function setMinimumPriceCount(uint newCount) auth { minimumPriceCount = newCount; }
-    function interruptUpdating() auth { updatesAreAllowed = false; }
     function resumeUpdating() auth { updatesAreAllowed = true; }
+    function interruptUpdating()
+        auth
+        pre_cond(isNowInterventionPeriod())
+    {
+        updatesAreAllowed = false;
+    }
 
     // PUBLIC VIEW METHODS
 
@@ -349,10 +351,10 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
         returns (uint price, uint timestamp)
     {
         AssetData memory data;
-        // TODO: add special case for INTERVAL 0
-
-        if (isNowUpdatePeriod()) {
-            if(lastUpdateTime < getLastEpochTime()) {
+        if (INTERVAL == 0) { // special case for testing only; just return latest prices
+            data = latestPrices[ofAsset];
+        } else if (isNowUpdatePeriod()) {
+            if (lastUpdateTime < getLastEpochTime()) {
                 // 1st update for next epoch has not occurred, so secondary mapping not yet updated
                 data = latestPrices[ofAsset];
             } else {
