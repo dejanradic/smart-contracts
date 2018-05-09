@@ -153,7 +153,7 @@ test.before(async () => {
 test.beforeEach(async t => {
   t.context.canonicalPriceFeed = await deployContract(
     "pricefeeds/CanonicalPriceFeed",
-    { from: accounts[0], gas: 6900000 },
+    opts,
     [
       mlnToken.address,
       mlnToken.address,
@@ -489,7 +489,7 @@ test.only("updates can only occur within last N seconds before a new epoch", asy
 
   // overwrite the context pricefeed
   t.context.canonicalPriceFeed = await deployContract(
-    "pricefeeds/CanonicalPriceFeed", { from: accounts[0], gas: 6900000 },
+    "pricefeeds/CanonicalPriceFeed", opts,
     [
       mlnToken.address,
       mlnToken.address,
@@ -602,6 +602,19 @@ test.only("updates can only occur within last N seconds before a new epoch", asy
   const [eurPriceBeforeIntervention, ] = await t.context.canonicalPriceFeed.instance.getPrice.call(
     {}, [eurToken.address]
   );
+  const [eurPre] = await t.context.canonicalPriceFeed.instance.preDelayPrices.call({}, [eurToken.address]);
+  const [eurPost] = await t.context.canonicalPriceFeed.instance.postDelayPrices.call({}, [eurToken.address]);
+  const [getPrice, ] = await t.context.canonicalPriceFeed.instance.getPrice.call(
+    {}, [eurToken.address]
+  );
+
+
+  console.log(`PRE PRICE: ${eurPre}`)
+  console.log(`POST PRICE: ${eurPost}`)
+  console.log(`GET PRICE: ${getPrice}`)
+  console.log(`FEED: ${t.context.canonicalPriceFeed.address}`)
+  console.log(`EUR: ${eurToken.address}`)
+
 
   txid = await t.context.pricefeeds[0].instance.update.postTransaction(
     { from: accounts[0], gas: inputGas},
@@ -610,9 +623,34 @@ test.only("updates can only occur within last N seconds before a new epoch", asy
   console.log(`GAS USED:  ${(await api.eth.getTransactionReceipt(txid)).gasUsed}`)
   const update5Time = await txidToTimestamp(txid)
 
+  const [eurPre2] = await t.context.canonicalPriceFeed.instance.preDelayPrices.call({}, [eurToken.address]);
+  const [eurPost2] = await t.context.canonicalPriceFeed.instance.postDelayPrices.call({}, [eurToken.address]);
+  const [getPrice2, ] = await t.context.canonicalPriceFeed.instance.getPrice.call(
+    {}, [eurToken.address]
+  );
+  console.log(`PRE PRICE: ${eurPre2}`)
+  console.log(`POST PRICE: ${eurPost2}`)
+  console.log(`GET PRICE: ${getPrice2}`)
+  console.log(`FEED: ${t.context.canonicalPriceFeed.address}`)
+  console.log(`EUR: ${eurToken.address}`)
+
+
+
   await mineToTime(Number(nextEpochTime4)); // mine to delay
 
-  await t.context.canonicalPriceFeed.instance.interruptUpdating.postTransaction({from: accounts[0]});
+
+  const [eurPre3] = await t.context.canonicalPriceFeed.instance.preDelayPrices.call({}, [eurToken.address]);
+  const [eurPost3] = await t.context.canonicalPriceFeed.instance.postDelayPrices.call({}, [eurToken.address]);
+  const [getPrice3, ] = await t.context.canonicalPriceFeed.instance.getPrice.call(
+    {}, [eurToken.address]
+  );
+  console.log(`PRE PRICE: ${eurPre3}`)
+  console.log(`POST PRICE: ${eurPost3}`)
+  console.log(`GET PRICE: ${getPrice3}`)
+  console.log(`FEED: ${t.context.canonicalPriceFeed.address}`)
+  console.log(`EUR: ${eurToken.address}`)
+
+  txid = await t.context.canonicalPriceFeed.instance.interruptUpdating.postTransaction({from: accounts[0]});
 
   await mineToTime(Number(nextEpochTime4) + postEpochInterventionDelay + 1); // mine past delay
 
