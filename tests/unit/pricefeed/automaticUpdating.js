@@ -19,6 +19,7 @@ let opts;
 let deployed;
 let canonicalPriceFeed;
 let pricefeeds;
+let txid;
 
 // mock data
 const mockIpfs = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG";
@@ -94,7 +95,6 @@ test.before(async t => {
   deployed = await deployEnvironment(environment);
   accounts = await api.eth.accounts();
   opts = { from: accounts[0], gas: config.gas };
-  ethToken = await deployed.EthToken;
   eurToken = await deployed.EurToken;
   mlnToken = await deployed.MlnToken;
 
@@ -142,13 +142,13 @@ test.before(async t => {
   ]);
 });
 
-test.serial("automatic updates execute as expected", async t => {
+test.serial("update occurs automatically within update period", async t => {
   const nextEpochTime0 = await canonicalPriceFeed.instance.getNextEpochTime.call();
   await mineToTime(Number(nextEpochTime0)); // start a fresh epoch
   const nextEpochTime1 = await canonicalPriceFeed.instance.getNextEpochTime.call();
   await mineToTime(Number(nextEpochTime1) - preEpochUpdatePeriod); // mine past delay
 
-  let txid = await pricefeeds[0].instance.update.postTransaction(
+  txid = await pricefeeds[0].instance.update.postTransaction(
     { from: accounts[0], gas: inputGas},
     [[mlnToken.address, eurToken.address], [defaultMlnPrice, initialEurPrice]]
   );    // set first epoch time
@@ -165,7 +165,9 @@ test.serial("automatic updates execute as expected", async t => {
   t.true(update1Time >= nextEpochTime1 - preEpochUpdatePeriod); // within preEpoch period
   t.true(timeAtPriceFetch1 > Number(nextEpochTime1) + postEpochInterventionDelay);
   t.is(Number(eurPriceUpdate1), Number(initialEurPrice));
+});
 
+test.serial("update issued before interval is rejected", async t => {
   txid = await pricefeeds[0].instance.update.postTransaction(
     { from: accounts[0], gas: inputGas},
     [[mlnToken.address, eurToken.address], [defaultMlnPrice, modifiedEurPrice1]]
@@ -182,7 +184,9 @@ test.serial("automatic updates execute as expected", async t => {
   t.true(update2Time < Number(nextEpochTime2) - preEpochUpdatePeriod); // 2nd update premature
   t.is(Number(gasUsedPrematureUpdate), inputGas);   // expect a thrown tx (all gas consumed)
   t.is(Number(eurPricePrematureUpdate), Number(initialEurPrice)); // price did not update
+});
 
+test.serial("canonical price is only updated after intervention delay", async t => {
   const nextEpochTime3 = await canonicalPriceFeed.instance.getNextEpochTime.call();
   await mineToTime(Number(nextEpochTime3) - preEpochUpdatePeriod + 1); // mine to update period
 
@@ -214,12 +218,14 @@ test.serial("automatic updates execute as expected", async t => {
   t.true(update3Time > Number(nextEpochTime3) - preEpochUpdatePeriod);
   t.true(update4Time < Number(nextEpochTime3));
   t.true(update4Time > Number(nextEpochTime3) - preEpochUpdatePeriod);
-  // price did not updated before delay
-  t.is(Number(eurPriceAfterUpdate3), Number(eurPriceUpdate1));
-  t.is(Number(eurPriceAfterUpdate4), Number(eurPriceUpdate1));
+  // price did not update before delay
+  t.is(Number(eurPriceAfterUpdate3), Number(initialEurPrice));
+  t.is(Number(eurPriceAfterUpdate4), Number(initialEurPrice));
   // price updated after delay
   t.is(Number(eurPriceAfterEpoch3Delay), Number(medianize([modifiedEurPrice1, modifiedEurPrice2])));
+});
 
+test.serial("intervention causes feed to use previous price, and prevents updates", async t => {
   const nextEpochTime4 = await canonicalPriceFeed.instance.getNextEpochTime.call();
   await mineToTime(Number(nextEpochTime4) - preEpochUpdatePeriod + 1); // mine to update period
 
@@ -243,4 +249,17 @@ test.serial("automatic updates execute as expected", async t => {
   );
 
   t.is(Number(eurPriceAfterIntervention), Number(eurPriceBeforeIntervention));
+
+  const nextEpochTime5 = await canonicalPriceFeed.instance.getNextEpochTime.call();
+  await mineToTime(Number(nextEpochTime5 - preEpochUpdatePeriod)); // mine to update period
+
+  txid = await pricefeeds[0].instance.update.postTransaction(
+    { from: accounts[0], gas: inputGas},
+    [[mlnToken.address, eurToken.address], [defaultMlnPrice, modifiedEurPrice2]]
+  );
+  const gasUsedUpdate = (await api.eth.getTransactionReceipt(txid)).gasUsed;
+
+  t.is(Number(gasUsedUpdate), inputGas);    // expect it to use all gas (throw)
 });
+
+

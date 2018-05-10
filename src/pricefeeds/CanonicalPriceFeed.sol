@@ -196,6 +196,7 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
         require(isOperator(msg.sender));
         if (INTERVAL != 0) {
             require(isNowUpdatePeriod());
+            require(updatesAreAllowed);
             if (lastUpdateTime < getLastEpochTime()) { // new epoch
                 delete operatorsUpdatingThisEpoch;     // clear list
                 require(operatorsUpdatingThisEpoch.length == 0);
