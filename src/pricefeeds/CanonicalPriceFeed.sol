@@ -365,25 +365,24 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
         AssetData memory data;
         if (INTERVAL == 0) { // special case for testing only; just return latest prices
             data = latestPrices[ofAsset];
+        } else if (!updatesAreAllowed) { // intervention; no updates can occur until resume
+            data = backupPrices[ofAsset];
         } else if (isNowUpdatePeriod()) {
             if (lastUpdateTime < getLastEpochTime()) {
-                // 1st update for next epoch has not occurred, so secondary mapping not yet updated
+                // 1st update for this epoch has not occurred, so secondary mapping not yet updated
                 data = latestPrices[ofAsset];
             } else {
                 // secondary mapping was updated, so can use it
                 data = backupPrices[ofAsset];
             }
         } else if (isNowInterventionPeriod()) {
-            data = backupPrices[ofAsset];
+            data = backupPrices[ofAsset];   // updated or not, only previous price is valid (delay not yet passed)
         } else if (
+            updatesAreAllowed &&
             !isNowUpdatePeriod() &&
             !isNowInterventionPeriod()
         ) {
-            if (updatesAreAllowed) {    // intervention is not occurring
-                data = latestPrices[ofAsset];
-            } else { // intervention is occurring
-                data = backupPrices[ofAsset];
-            }
+            data = latestPrices[ofAsset];
         }
         return (data.price, data.timestamp);
     }

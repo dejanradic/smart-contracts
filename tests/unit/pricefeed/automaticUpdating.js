@@ -236,7 +236,6 @@ test.serial("intervention causes feed to use previous price, and prevents update
     { from: accounts[0], gas: inputGas},
     [[mlnToken.address, eurToken.address], [defaultMlnPrice, modifiedEurPrice2]]
   );
-  const update5Time = await txidToTimestamp(txid)
 
   await mineToTime(Number(nextEpochTime4)); // mine to delay
 
@@ -254,12 +253,29 @@ test.serial("intervention causes feed to use previous price, and prevents update
   await mineToTime(Number(nextEpochTime5 - preEpochUpdatePeriod)); // mine to update period
 
   txid = await pricefeeds[0].instance.update.postTransaction(
-    { from: accounts[0], gas: inputGas},
-    [[mlnToken.address, eurToken.address], [defaultMlnPrice, modifiedEurPrice2]]
+    {from: accounts[0], gas: inputGas},
+    [[mlnToken.address, eurToken.address], [defaultMlnPrice, modifiedEurPrice1]]
   );
   const gasUsedUpdate = (await api.eth.getTransactionReceipt(txid)).gasUsed;
 
   t.is(Number(gasUsedUpdate), inputGas);    // expect it to use all gas (throw)
 });
 
+test.serial("updating can be resumed by authority", async t => {
+  await canonicalPriceFeed.instance.resumeUpdating.postTransaction();
+  const nextEpochTime5 = await canonicalPriceFeed.instance.getNextEpochTime.call();
+  await mineToTime(Number(nextEpochTime5) - preEpochUpdatePeriod); // mine to update period
 
+  txid = await pricefeeds[0].instance.update.postTransaction(
+    { from: accounts[0], gas: inputGas},
+    [[mlnToken.address, eurToken.address], [defaultMlnPrice, modifiedEurPrice1]]
+  );
+
+  await mineToTime(Number(nextEpochTime5) + postEpochInterventionDelay + 1); // mine past delay
+
+  const [eurPriceAfterResume, ] = await canonicalPriceFeed.instance.getPrice.call(
+    {}, [eurToken.address]
+  );
+
+  t.is(Number(eurPriceAfterResume), Number(modifiedEurPrice1));
+});
