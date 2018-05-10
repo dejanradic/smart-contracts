@@ -166,6 +166,17 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
 
     // UPDATING
 
+    /// @dev Used for testing (INTERVAL == 0)
+    function forceCollectAndUpdate()
+        public
+        auth
+        pre_cond(INTERVAL == 0)
+    {
+        collectAndUpdate(getRegisteredAssets());
+        delete operatorsUpdatingThisEpoch;
+        require(operatorsUpdatingThisEpoch.length == 0);
+    }
+
     function _updatePrices(address[] ofAssets, uint[] newPrices)
         internal
         pre_cond(ofAssets.length == newPrices.length)
@@ -195,19 +206,14 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
                 }
             }
             require(!hasUpdatedThisEpoch(msg.sender));
+            lastUpdateTime = block.timestamp;
         }
-        lastUpdateTime = block.timestamp;
+
         operatorsUpdatingThisEpoch.push(msg.sender);
-        if (INTERVAL == 0 || operatorsUpdatingThisEpoch.length >= MINIMUM_UPDATES_PER_EPOCH) {
+
+        if (INTERVAL != 0 && operatorsUpdatingThisEpoch.length >= MINIMUM_UPDATES_PER_EPOCH) {
             registeredAssets = getRegisteredAssets();
-            uint[] memory newPrices = collectAndUpdate(registeredAssets);
-            historicalPrices.push(
-                UpdateData({
-                    assets: registeredAssets,
-                    prices: newPrices,
-                    timestamp: block.timestamp
-                })
-            );
+            collectAndUpdate(registeredAssets);
         }
     }
 
@@ -224,7 +230,6 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
     /// @param ofAssets list of asset addresses
     function collectAndUpdate(address[] ofAssets)
         internal
-        returns (uint[])
     {
         address[] memory operators = operatorsUpdatingThisEpoch;
         uint[] memory newPrices = new uint[](ofAssets.length);
@@ -241,7 +246,13 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
             newPrices[i] = medianize(assetPrices);
         }
         _updatePrices(ofAssets, newPrices);
-        return newPrices;
+        historicalPrices.push(
+            UpdateData({
+                assets: ofAssets,
+                prices: newPrices,
+                timestamp: block.timestamp
+            })
+        );
     }
 
     /// @dev from MakerDao medianizer contract
