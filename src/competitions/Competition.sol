@@ -42,7 +42,8 @@ contract Competition is CompetitionInterface, DSMath, DBC, Owned {
     address public custodian; // Address of the custodian which holds the funds sent
     uint public startTime; // Competition start time in seconds (Temporarily Set)
     uint public endTime; // Competition end time in seconds
-    uint public bonusRate; // Buy in Rate
+    uint public rewardRate; // Fixed MLN - Ether conversion rate
+    uint public bonusRate; // Bonus multiplier
     uint public totalMaxBuyin; // Limit amount of deposit to participate in competition (Valued in Ether)
     uint public currentTotalBuyin; // Total buyin till now
     uint public maxRegistrants; // Limit number of participate in competition
@@ -57,7 +58,6 @@ contract Competition is CompetitionInterface, DSMath, DBC, Owned {
     mapping (address => address) public registeredFundToRegistrants; // For fund address indexed accessing of registrant addresses
     mapping(address => RegistrantId) public registrantToRegistrantIds; // For registrant address indexed accessing of registrant ids
     mapping(address => uint) public whitelistantToMaxBuyin; // For registrant address to respective max buyIn cap (Valued in CHF)
-    uint public failSafePrice; // Least value of invertedMlnPrice that is acceptable (As a fail safe)
 
     //EVENTS
 
@@ -119,15 +119,7 @@ contract Competition is CompetitionInterface, DSMath, DBC, Owned {
 
     /// @return Calculated payout in MLN with bonus for payin in Ether
     function calculatePayout(uint payin) view returns (uint payoutQuantity) {
-        address feedAddress = Version(COMPETITION_VERSION).CANONICAL_PRICEFEED();
-        var (isRecent, invertedMlnPrice, mlnDecimals) = CanonicalPriceFeed(feedAddress).getInvertedPriceInfo(MELON_ASSET);
-        if (!isRecent) {
-            revert();
-        }
-        if (invertedMlnPrice < failSafePrice) {
-            revert();
-        }
-        uint payoutQuantityBeforeBonus = mul(payin, invertedMlnPrice) / 10 ** mlnDecimals;
+        uint payoutQuantityBeforeBonus = mul(payin, rewardRate) / 10 ** 18;
         payoutQuantity = mul(payoutQuantityBeforeBonus, bonusRate) / 10 ** 18;
     }
 
@@ -167,6 +159,7 @@ contract Competition is CompetitionInterface, DSMath, DBC, Owned {
         address ofCustodian,
         uint ofStartTime,
         uint ofEndTime,
+        uint ofRewardRate,
         uint ofBonusRate,
         uint ofTotalMaxBuyin,
         uint ofMaxRegistrants
@@ -178,6 +171,7 @@ contract Competition is CompetitionInterface, DSMath, DBC, Owned {
         custodian = ofCustodian;
         startTime = ofStartTime;
         endTime = ofEndTime;
+        rewardRate= ofRewardRate;
         bonusRate = ofBonusRate;
         totalMaxBuyin = ofTotalMaxBuyin;
         maxRegistrants = ofMaxRegistrants;
@@ -244,16 +238,6 @@ contract Competition is CompetitionInterface, DSMath, DBC, Owned {
         for (uint i = 0; i < whitelistants.length; ++i) {
             whitelistantToMaxBuyin[whitelistants[i]] = maxBuyinQuantity;
         }
-    }
-
-    /// @notice Change Fail Safe Price
-    /// @param newFailSafePrice New fail safe price
-    function changeFailSafePrice(
-        uint newFailSafePrice
-    )
-        pre_cond(isOwner())
-    {
-        failSafePrice = newFailSafePrice;
     }
 
     /// @notice Claim Reward
