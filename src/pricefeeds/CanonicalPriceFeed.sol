@@ -51,6 +51,18 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
 
     // CONSTRUCTOR
 
+    /**
+    @dev Canonical pricefeed explanation:
+        The canonical pricefeed provides a single price for each asset that is used throughout the Melon ecosystem.
+        This price is the arithmetic median of the prices from several independent "subfeeds".
+        The subfeeds are selected through staking, where the top N stakers are able to issue udpates, which are considered by the canonical pricefeed.
+        Time is punctuated by "epochs" which occur every certain number of seconds ("interval").
+        Before the next epoch, prices are collected during the "pre epoch update period".
+        During the update period, when the minimum number of updaters have reported their price for this interval, new prices (medians) are calculated with every new update.
+        After each epoch, the newly-calculated prices are not valid until the "post epoch intervention interval" is over.
+        This intervention interval gives the Melon technical council time to intervene in case a malicious price is introduced into the system.
+        During intervention, prices are reverted to the previous price in the canonical pricefeed.
+    */
     /// @dev Define and register a quote asset against which all prices are measured/based against
     /// @param ofStakingAsset Address of staking asset (may or may not be quoteAsset)
     /// @param ofQuoteAsset Address of quote asset
@@ -62,8 +74,13 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
     /// @param quoteAssetBreakInBreakOut Break-in/break-out for quote asset on destination chain
     /// @param quoteAssetStandards EIP standards quote asset adheres to
     /// @param quoteAssetFunctionSignatures Whitelisted functions of quote asset contract
-    // /// @param interval Number of seconds between pricefeed updates (this interval is not enforced on-chain, but should be followed by the datafeed maintainer)
-    // /// @param validity Number of seconds that datafeed update information is valid for
+    /// @param updateInfo [0] Interval: Seconds between successive epochs
+    /// @param updateInfo [1] Validity: Seconds that datafeed update information is valid for
+    /// @param updateInfo [2] Update period: Seconds before epoch where updates can be sent
+    /// @param updateInfo [3] Minimum updates per epoch: Minimum subfeed updates before collectAndUpdate is called for the first time
+    /// @param updateInfo [4] Intervention period: Seconds after epoch where multisig can intervene, and revert to previous price
+    /// @param stakingInfo [0] Minimum stake: Minimum amount of MLN token to be able to stake
+    /// @param stakingInfo [1] Number of operators: Amount of top stakers that can issue subfeed updates
     /// @param ofGovernance Address of contract governing the Canonical PriceFeed
     function CanonicalPriceFeed(
         address ofStakingAsset,
@@ -177,19 +194,6 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
         require(operatorsUpdatingThisEpoch.length == 0);
     }
 
-    function _updatePrices(address[] ofAssets, uint[] newPrices)
-        internal
-        pre_cond(ofAssets.length == newPrices.length)
-    {
-        updateId++;
-        for (uint i = 0; i < ofAssets.length; ++i) {
-            require(assetIsRegistered(ofAssets[i]));
-            latestPrices[ofAssets[i]].timestamp = now;
-            latestPrices[ofAssets[i]].price = newPrices[i];
-        }
-        emit PriceUpdated(keccak256(ofAssets, newPrices));
-    }
-
     // TODO: convert requires to pre_cond when number of variables is finalized
     function subFeedPostUpdateHook() public {
         address[] memory registeredAssets;
@@ -246,7 +250,14 @@ contract CanonicalPriceFeed is OperatorStaking, CanonicalRegistrar {
             }
             newPrices[i] = medianize(assetPrices);
         }
-        _updatePrices(ofAssets, newPrices);
+        require(ofAssets.length == newPrices.length);
+        updateId++;
+        for (uint k = 0; k < ofAssets.length; ++k) {
+            require(assetIsRegistered(ofAssets[k]));
+            latestPrices[ofAssets[k]].timestamp = now;
+            latestPrices[ofAssets[k]].price = newPrices[k];
+        }
+        emit PriceUpdated(keccak256(ofAssets, newPrices));
         historicalPrices.push(
             UpdateData({
                 assets: ofAssets,
