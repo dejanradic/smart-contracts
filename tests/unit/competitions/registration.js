@@ -83,7 +83,7 @@ test.beforeEach(async () => {
       accounts[5],
       blockchainTime,
       blockchainTime + 86400,
-      2 * 10 ** 18,
+      22 * 10 ** 18,
       10 ** 23,
       10,
     ],
@@ -171,6 +171,9 @@ test.serial(
       [fund.address],
     );
     const expectedReward = await competition.instance.calculatePayout.call({}, [buyInAmount]);
+    console.log(await competition.instance.getEtherValue.call({}, [buyInAmount]));
+    console.log(await competition.instance.calculatePayout.call({}, [buyInAmount]));
+
     t.deepEqual(fundMlnOnFirst, expectedReward);
     t.deepEqual(fundMlnOnSecond, fundMlnOnFirst);
   },
@@ -188,7 +191,7 @@ test.serial("Cannot register after endTime", async t => {
       accounts[5],
       blockchainTime,
       blockchainTime - 86400,
-      10 ** 17,
+      22 * 10 ** 18,
       10 ** 22,
       10,
     ],
@@ -224,7 +227,7 @@ test.serial("Cannot register before startTime", async t => {
       accounts[5],
       blockchainTime - 86400,
       blockchainTime - 86400,
-      10 ** 17,
+      22 * 10 ** 18,
       10 ** 22,
       10,
     ],
@@ -262,7 +265,7 @@ test.serial(
         accounts[5],
         blockchainTime,
         blockchainTime + 86400,
-        10 ** 17,
+        22 * 10 ** 18,
         10 ** 22,
         0,
       ],
@@ -286,15 +289,3 @@ test.serial(
     t.is(registrantFund, "0x0000000000000000000000000000000000000000");
   },
 );
-
-test.serial("Cannot register if price is less than failSafePrice", async t => {
-  const [, invertedPrice, ] = await deployed.CanonicalPriceFeed.instance.getInvertedPriceInfo.call({}, [
-    deployed.MlnToken.address
-  ]);
-  await competition.instance.changeFailSafePrice.postTransaction(
-    opts,
-    [invertedPrice.add(1)],
-  );
-  const registrantFund = await registerFund(fund.address, manager, 10);
-  t.is(registrantFund, "0x0000000000000000000000000000000000000000");
-});
