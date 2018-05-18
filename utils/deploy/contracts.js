@@ -77,6 +77,7 @@ async function deployEnvironment(environment) {
     deployed.NoCompliance = await deployContract("compliance/NoCompliance", opts);
     deployed.OnlyManager = await deployContract("compliance/OnlyManager", opts);
     deployed.RMMakeOrders = await deployContract("riskmgmt/RMMakeOrders", opts);
+    deployed.RMBlacklist = await deployContract("riskmgmt/RiskMgmtBlacklist", opts);
     deployed.Governance = await deployContract("system/Governance", opts, [[accounts[0]], 1, yearInSeconds]);
     deployed.SimpleAdapter = await deployContract("exchange/adapter/SimpleAdapter", opts);
     deployed.CentralizedAdapter = await deployContract("exchange/adapter/CentralizedAdapter", opts);
@@ -158,6 +159,7 @@ async function deployEnvironment(environment) {
 
     deployed.OnlyManager = await deployContract("compliance/OnlyManager", {from: deployer});
     deployed.RMMakeOrders = await deployContract("riskmgmt/RMMakeOrders", {from: deployer});
+    deployed.RMBlacklist = await deployContract("riskmgmt/RiskMgmtBlacklist", {from: deployer});
     deployed.SimpleAdapter = await deployContract("exchange/adapter/SimpleAdapter", {from: deployer});
     deployed.Governance = await deployContract("system/Governance", {from: deployer}, [
       [config.protocol.governance.authority],
@@ -210,6 +212,7 @@ async function deployEnvironment(environment) {
     deployed.SimpleMarket = await deployContract("exchange/thirdparty/SimpleMarket", opts);
     deployed.NoCompliance = await deployContract("compliance/NoCompliance", opts);
     deployed.RMMakeOrders = await deployContract("riskmgmt/RMMakeOrders", opts);
+    deployed.RMBlacklist = await deployContract("riskmgmt/RiskMgmtBlacklist", opts);
     deployed.Governance = await deployContract("system/Governance", opts, [[accounts[0]], 1, 100000]);
     deployed.SimpleAdapter = await deployContract("exchange/adapter/SimpleAdapter", opts);
     deployed.CentralizedAdapter = await deployContract("exchange/adapter/CentralizedAdapter", opts);
